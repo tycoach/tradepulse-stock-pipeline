@@ -1,0 +1,49 @@
+# Two services: a Postgres database and Airflow. Run everything with: docker compose up --build
+
+services:
+
+  # ---------- Service 1: Postgres (holds Airflow's own data AND our stock data) ----------
+  postgres:
+    image: postgres:16
+    environment:
+      POSTGRES_USER: airflow
+      POSTGRES_PASSWORD: airflow
+      POSTGRES_DB: airflow
+    volumes:
+      - postgres_data:/var/lib/postgresql/data           # keeps data after the container stops
+      - ./sql/init.sql:/docker-entrypoint-initdb.d/init.sql  # runs once to create the "stocks" database
+    ports:
+      - "5433:5432"       #  localhost:5433
+    healthcheck:
+      test: ["CMD", "pg_isready", "-U", "airflow"]
+      interval: 5s
+      retries: 10
+
+  # ---------- Service 2: Airflow (scheduler + web UI +Spark code) ----------
+  airflow:
+    build: .              # builds our Dockerfile
+    depends_on:
+      postgres:
+        condition: service_healthy    # wait until Postgres is completely ready
+    env_file: .env
+    environment:
+      AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql://airflow:airflow@postgres/airflow
+      AIRFLOW__WEBSERVER__SECRET_KEY: "super-secret-temporary-key-for-local-development"
+      AIRFLOW__CORE__EXECUTOR: LocalExecutor
+      AIRFLOW__CORE__LOAD_EXAMPLES: "false"
+      PYTHONPATH: /opt/airflow                  
+      PYSPARK_SUBMIT_ARGS: "--jars /opt/jars/postgresql.jar pyspark-shell"
+    volumes:
+      - ./dags:/opt/airflow/dags
+      - ./scripts:/opt/airflow/scripts
+      - ./data:/opt/airflow/data
+    ports:
+      - "8080:8080"       # Airflow UI -> http://localhost:8080
+    command: >
+      bash -c "airflow db migrate &&
+               airflow users create --username admin --password admin
+                 --firstname Admin --lastname User --role Admin --email admin@example.com || true;
+               airflow standalone"
+
+volumes:
+  postgres_data:

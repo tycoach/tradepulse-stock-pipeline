@@ -1,0 +1,8 @@
+@"
+.env
+data/raw/*.json
+data/processed/*
+!data/processed/.gitkeep
+__pycache__/
+*.pyc
+"@ | Set-Content -Encoding ascii .gitignore
